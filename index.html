@@ -1136,9 +1136,10 @@
     }
 </script>
 
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+
 <script type="module">
 import * as THREE from 'three';
-import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0";
 
 const PULSE_SPEED = 60.0;
 const MOVE_SPEED = 0.2;
@@ -1149,20 +1150,6 @@ const ROOM_HALF_SIZE = 46;
 const OBSTACLE_COUNT = 92;
 const BUG_COUNT = 7;
 const PULSE_COOLDOWN_MS = 90;
-
-const visionPromise = FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm");
-const faceLandmarkerPromise = visionPromise.then((vision) =>
-    FaceLandmarker.createFromOptions(vision, {
-        baseOptions: {
-            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
-        },
-        runningMode: "VIDEO",
-        numFaces: 1,
-        minFaceDetectionConfidence: 0.35,
-        minFacePresenceConfidence: 0.35,
-        minTrackingConfidence: 0.35
-    })
-);
 
 let score = 0;
 let gameArmed = false;
@@ -1178,7 +1165,9 @@ let lastPulseTime = 0;
 let cameraPitch = -0.08;
 let headTurnSmoothed = 0;
 let hasPushedExperienceState = false;
-let faceLandmarker;
+let faceMesh;
+let latestFaceLandmarks = null;
+let isSendingFaceFrame = false;
 let audioContext;
 let analyser;
 let timeDomainData;
@@ -1471,7 +1460,20 @@ async function setupAudio() {
 }
 
 async function setupFaceTracking() {
-    faceLandmarker = await faceLandmarkerPromise;
+    faceMesh = new window.FaceMesh({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+    });
+    faceMesh.setOptions({
+        maxNumFaces: 1,
+        refineLandmarks: true,
+        minDetectionConfidence: 0.35,
+        minTrackingConfidence: 0.35
+    });
+    faceMesh.onResults((results) => {
+        latestFaceLandmarks = results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0
+            ? results.multiFaceLandmarks[0]
+            : null;
+    });
     document.getElementById('mic-visualizer').style.display = 'block';
 }
 
@@ -1568,10 +1570,15 @@ function animate() {
     let rotateLeft = false;
     let rotateRight = false;
 
-    if (faceLandmarker && videoElement.readyState >= 3) {
-        const results = faceLandmarker.detectForVideo(videoElement, performance.now());
-        if (results.landmarks && results.landmarks.length > 0) {
-            const headTurn = getHeadTurn(results.landmarks[0]);
+    if (faceMesh && videoElement.readyState >= 3 && !isSendingFaceFrame) {
+        isSendingFaceFrame = true;
+        faceMesh.send({ image: videoElement }).finally(() => {
+            isSendingFaceFrame = false;
+        });
+    }
+    if (faceMesh && videoElement.readyState >= 3) {
+        if (latestFaceLandmarks) {
+            const headTurn = getHeadTurn(latestFaceLandmarks);
             headTurnSmoothed = headTurnSmoothed * 0.75 + headTurn * 0.25;
             if (gameStarted) gestureHint.innerText = "Head steer: " + headTurnSmoothed.toFixed(2) + " | Up/down arrows tilt view";
             if (headTurnSmoothed > 0.12) rotateLeft = true;
