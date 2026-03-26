@@ -37,6 +37,10 @@
                 linear-gradient(180deg, #fff8f0 0%, #f5f1ea 28%, #f0ebe2 100%);
         }
 
+        body.experience-mode {
+            overflow: hidden;
+        }
+
         a { color: inherit; text-decoration: none; }
         .site-shell { position: relative; overflow-x: clip; }
         .site-shell::before,
@@ -545,10 +549,6 @@
             z-index: 2;
         }
 
-        .experience-shell.active #loading {
-            opacity: 1;
-        }
-
         #game-canvas-host {
             position: absolute;
             inset: 0;
@@ -714,6 +714,42 @@
             letter-spacing: 0.02em;
         }
 
+        body.experience-mode .topbar,
+        body.experience-mode .hero,
+        body.experience-mode .section-block,
+        body.experience-mode .fine-print {
+            display: none;
+        }
+
+        body.experience-mode .game-section {
+            position: fixed;
+            inset: 0;
+            padding: 0;
+            z-index: 100;
+        }
+
+        body.experience-mode .game-section .section-inner,
+        body.experience-mode .game-grid {
+            width: 100%;
+            max-width: none;
+            margin: 0;
+            height: 100%;
+            display: block;
+        }
+
+        body.experience-mode .game-copy {
+            display: none;
+        }
+
+        body.experience-mode .experience-shell {
+            position: fixed;
+            inset: 0;
+            min-height: 100svh;
+            border-radius: 0;
+            border: 0;
+            box-shadow: none;
+        }
+
         @media (max-width: 1100px) {
             .hero-grid,
             .section-header,
@@ -788,7 +824,7 @@
     <section class="hero">
         <div class="section-inner hero-grid">
             <div class="hero-copy">
-                <div class="eyebrow">April 1 Product Introduction • Negative Illumination Entertainment</div>
+                <div class="eyebrow">Negative Illumination Entertainment • Lumoplay Labs</div>
                 <h1>Introducing Darkoplay.<span>The future of interactive floors is total darkness.</span></h1>
                 <p>
                     At Lumoplay, we have spent years asking how projected play can become more immersive, more responsive,
@@ -1021,7 +1057,7 @@
                 <div class="game-list">
                     <div>Click the button to arm the camera and microphone.</div>
                     <div>Scream to reveal the environment and begin the hunt.</div>
-                    <div>Turn your head to steer. Press <strong>S</strong> to brake.</div>
+                    <div>Turn your head (or arrow keys) to steer. Press <strong>S</strong> to brake.</div>
                 </div>
                 <button class="button button-primary" id="enter-darkness-secondary">ENTER THE DARKNESS</button>
             </div>
@@ -1040,12 +1076,12 @@
 
                 <div id="ui" style="display: none;">
                     <div>INSECT ACQUISITION: <span id="score">0</span></div>
-                    <div id="gesture-hint" style="margin-top: 10px; font-size: 0.9em;">Turn your head to steer...</div>
+                    <div id="gesture-hint" style="margin-top: 10px; font-size: 0.9em;">Turn your head (or arrow keys) to steer...</div>
                 </div>
 
                 <div id="instructions">
                     SCREAM to reveal the cave.<br>
-                    TURN HEAD LEFT/RIGHT = Steer | S = Brake
+                    TURN YOUR HEAD (OR ARROW KEYS) TO STEER | S = Brake
                 </div>
 
                 <div id="chomp-reaction">CHOMP!</div>
@@ -1062,7 +1098,7 @@
 
     <footer class="fine-print">
         <p>
-            Darkoplay is an April Fool’s concept from Lumoplay and should not be interpreted as guidance for venue safety,
+            Darkoplay is a speculative concept from Lumoplay and should not be interpreted as guidance for venue safety,
             lighting design, cave operations, bat relations, enterprise procurement, child supervision, or the future of human-computer interaction.
             Not responsible for collisions with stalagmites, coworkers, strategic narratives, or reality. Some metrics are aspirational. Most are emotional.
         </p>
@@ -1455,7 +1491,7 @@ function animate() {
                     gameStarted = true;
                     loadingElement.classList.add('hidden');
                     document.getElementById('ui').style.display = 'block';
-                    gestureHint.innerText = 'Hunt started. Turn your head to weave through the cave.';
+                    gestureHint.innerText = 'Hunt started. Turn your head or use the arrow keys to weave through the cave.';
                 }
             }
         } else {
@@ -1582,8 +1618,7 @@ function animate() {
 }
 
 async function enterDarkness() {
-    gameStage.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    gameStage.classList.add('active');
+    document.body.classList.add('experience-mode');
 
     if (gameArmed) return;
 
@@ -1592,7 +1627,7 @@ async function enterDarkness() {
         await setupAudio();
         await setupFaceTracking();
         gameArmed = true;
-        setLoading('Scream To Start', 'Turn your head left and right to steer once the cave reveals itself.');
+        setLoading('Scream To Start', 'Turn your head (or use the arrow keys) to steer once the cave reveals itself.');
 
         if (!animationStarted) {
             animationStarted = true;
