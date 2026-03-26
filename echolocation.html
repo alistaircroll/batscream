@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Echolocation Bat Hunt</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', Courier, monospace; }
+        #ui { position: absolute; top: 20px; left: 20px; color: #ff0000; pointer-events: none; text-shadow: 0 0 5px #ff0000; z-index: 10; }
+        #loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: white; text-align: center; z-index: 20; }
+        #loading-card { background: rgba(0,0,0,0.86); padding: 40px; border: 2px solid #ff0000; border-radius: 10px; max-width: 600px; margin: 20px; box-shadow: 0 0 40px rgba(255, 0, 0, 0.2); }
+        #chomp-reaction { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #ff3300; font-size: 5rem; font-weight: bold; text-shadow: 0 0 20px #ff0000; pointer-events: none; z-index: 9999; opacity: 0; }
+        @keyframes chompAnim { 0% { transform: translate(-50%, -50%) scale(0.5); opacity: 1; } 50% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; } 100% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; } }
+        video { position: absolute; bottom: 10px; right: 10px; width: 160px; height: 120px; border: 1px solid #333; transform: scaleX(-1); z-index: 10; }
+        #instructions { position: absolute; bottom: 20px; left: 20px; color: #777; font-size: 12px; z-index: 10; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+
+<div id="loading">
+    <div id="loading-card">
+        <h1 style="font-size: 3em; color: #ff3300; text-shadow: 0 0 10px #ff0000; margin-top: 0;">ECHOLOCATION</h1>
+        <p style="font-size: 1.2em; color: #aaa; margin-bottom: 30px; line-height: 1.5;">
+            You're a bat in darkness. How will you find your food?<br>
+            <span style="color: #fff; font-weight: bold; text-shadow: 0 0 5px #fff;">By making noise!</span>
+        </p>
+        <p style="color: #ff3300; font-size: 1.1em;" id="loading-text">CLICK TO ARM CAMERA + MIC</p>
+        <p style="font-size: 0.95em; color: #bbb; margin-bottom: 8px;" id="loading-subtext">Then scream to launch the hunt.</p>
+        <p style="font-size: 0.8em; color: #777;">Head-turn to steer. Make noise to reveal the cave.</p>
+        <div style="margin-top: 50px; font-size: 0.75em; color: #555; border-top: 1px solid #333; padding-top: 10px;">
+            Copyright &copy; 2026 Darkoplay, a division of Lumoplay.
+        </div>
+    </div>
+</div>
+
+<div id="ui" style="display: none;">
+    <div>PRIZES COLLECTED: <span id="score">0</span></div>
+    <div id="gesture-hint" style="margin-top: 10px; font-size: 0.9em;">Turn your head to steer...</div>
+</div>
+
+<div id="instructions">
+    SCREAM to see your world (Echolocation).<br>
+    TURN HEAD LEFT/RIGHT = Steer | S = Brake
+</div>
+
+<div id="chomp-reaction">CHOMP!</div>
+
+<div id="mic-visualizer" style="display: none; position: absolute; left: 20px; top: 40%; transform: translateY(-50%); width: 20px; height: 300px; background: rgba(50,50,50,0.5); border: 2px solid #555; border-radius: 10px; overflow: hidden; z-index: 10;">
+    <div id="mic-level" style="position: absolute; bottom: 0; left: 0; width: 100%; height: 0%; background: #00ff00; transition: height 0.05s, background 0.1s;"></div>
+    <div id="mic-threshold" style="position: absolute; bottom: 15%; left: 0; width: 100%; height: 4px; background: #ff0000; transition: bottom 0.08s;"></div>
+</div>
+
+<video id="webcam" autoplay playsinline muted></video>
+
+<script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0";
+
+const PULSE_SPEED = 80.0;
+const MOVE_SPEED = 0.2;
+const ROT_SPEED = 0.045;
+const ROOM_HALF_SIZE = 34;
+const OBSTACLE_COUNT = 125;
+const BUG_COUNT = 7;
+const PULSE_COOLDOWN_MS = 90;
+
+const visionPromise = FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm");
+const faceLandmarkerPromise = visionPromise.then((vision) =>
+    FaceLandmarker.createFromOptions(vision, {
+        baseOptions: {
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
+        },
+        runningMode: "VIDEO",
+        numFaces: 1
+    })
+);
+
+let score = 0;
+let gameArmed = false;
+let gameStarted = false;
+let animationStarted = false;
+let pulseActive = false;
+let pulseRadius = 0;
+let pulseMaxRadius = 300;
+let backgroundNoiseLevel = 0.02;
+let dynamicThreshold = 0.08;
+let lastPulseTime = 0;
+let faceLandmarker;
+let audioContext;
+let analyser;
+let timeDomainData;
+
+const videoElement = document.getElementById('webcam');
+const scoreElement = document.getElementById('score');
+const gestureHint = document.getElementById('gesture-hint');
+const loadingElement = document.getElementById('loading');
+const loadingText = document.getElementById('loading-text');
+const loadingSubtext = document.getElementById('loading-subtext');
+const keys = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false, KeyW: false, KeyS: false, KeyA: false, KeyD: false };
+const obstacles = [];
+const bugs = [];
+
+function setLoading(message, subtext) {
+    loadingText.textContent = message;
+    loadingSubtext.textContent = subtext;
+}
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+camera.position.set(0, 1.6, ROOM_HALF_SIZE - 5);
+
+const wallMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+        pulseCenter: { value: new THREE.Vector3() },
+        pulseRadius: { value: 0.0 },
+        pulseMaxRadius: { value: 300.0 },
+        baseColor: { value: new THREE.Color(0x110000) },
+        lineColor: { value: new THREE.Color(0xff0000) }
+    },
+    vertexShader: `
+        varying vec3 vPosition;
+        void main() {
+            float noise = sin(position.x * 4.0) * cos(position.y * 4.0) * sin(position.z * 4.0);
+            vec3 displaced = position + normal * noise * 0.4;
+            vPosition = (modelMatrix * vec4(displaced, 1.0)).xyz;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(displaced, 1.0);
+        }
+    `,
+    fragmentShader: `
+        uniform vec3 pulseCenter;
+        uniform float pulseRadius;
+        uniform float pulseMaxRadius;
+        uniform vec3 baseColor;
+        uniform vec3 lineColor;
+        varying vec3 vPosition;
+        void main() {
+            float dist = distance(vPosition, pulseCenter);
+            float isInside = 1.0 - smoothstep(pulseRadius, pulseRadius + 2.0, dist);
+            float edgeDist = pulseRadius - dist;
+            float highlight = 0.0;
+            if (edgeDist > 0.0 && edgeDist < 5.0) highlight = 1.0 - (edgeDist / 5.0);
+            float globalFade = 1.0 - (pulseRadius / pulseMaxRadius);
+            globalFade = clamp(globalFade * 1.75, 0.0, 1.0);
+            float pulseIntensity = isInside * (0.3 + highlight * 0.7) * globalFade;
+            float grid = sin(vPosition.x * 2.0) * sin(vPosition.z * 2.0) * 0.5 + 0.5;
+            vec3 finalColor = mix(baseColor * 0.1, pulseIntensity * lineColor, pulseIntensity * (0.5 + grid * 0.5));
+            gl_FragColor = vec4(finalColor, 1.0);
+        }
+    `
+});
+
+function createCaveMesh(geometry) {
+    return new THREE.Mesh(geometry, wallMaterial);
+}
+
+function buildArena() {
+    const floor = createCaveMesh(new THREE.PlaneGeometry(ROOM_HALF_SIZE * 2, ROOM_HALF_SIZE * 2, 40, 40));
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -4;
+    scene.add(floor);
+
+    const ceiling = createCaveMesh(new THREE.PlaneGeometry(ROOM_HALF_SIZE * 2, ROOM_HALF_SIZE * 2, 40, 40));
+    ceiling.rotation.x = Math.PI / 2;
+    ceiling.position.y = 10;
+    scene.add(ceiling);
+
+    const northWall = createCaveMesh(new THREE.PlaneGeometry(ROOM_HALF_SIZE * 2, 14, 40, 12));
+    northWall.position.set(0, 3, -ROOM_HALF_SIZE);
+    scene.add(northWall);
+
+    const southWall = createCaveMesh(new THREE.PlaneGeometry(ROOM_HALF_SIZE * 2, 14, 40, 12));
+    southWall.rotation.y = Math.PI;
+    southWall.position.set(0, 3, ROOM_HALF_SIZE);
+    scene.add(southWall);
+
+    const eastWall = createCaveMesh(new THREE.PlaneGeometry(ROOM_HALF_SIZE * 2, 14, 40, 12));
+    eastWall.rotation.y = -Math.PI / 2;
+    eastWall.position.set(ROOM_HALF_SIZE, 3, 0);
+    scene.add(eastWall);
+
+    const westWall = createCaveMesh(new THREE.PlaneGeometry(ROOM_HALF_SIZE * 2, 14, 40, 12));
+    westWall.rotation.y = Math.PI / 2;
+    westWall.position.set(-ROOM_HALF_SIZE, 3, 0);
+    scene.add(westWall);
+
+    for (let i = 0; i < OBSTACLE_COUNT; i++) {
+        const x = Math.random() * (ROOM_HALF_SIZE * 2 - 8) - (ROOM_HALF_SIZE - 4);
+        const z = Math.random() * (ROOM_HALF_SIZE * 2 - 8) - (ROOM_HALF_SIZE - 4);
+        const nearSpawn = Math.abs(x) < 8 && z > ROOM_HALF_SIZE - 18;
+
+        if (nearSpawn) {
+            i--;
+            continue;
+        }
+
+        const isStalagmite = Math.random() > 0.45;
+        const radius = 1.2 + Math.random() * 2.8;
+        const height = 6 + Math.random() * 12;
+        const caveObj = new THREE.Mesh(new THREE.ConeGeometry(radius, height, 16, 16), wallMaterial);
+
+        if (isStalagmite) {
+            caveObj.position.set(x, height / 2 - 4, z);
+        } else {
+            caveObj.rotation.x = Math.PI;
+            caveObj.position.set(x, 10 - height / 2, z);
+        }
+
+        scene.add(caveObj);
+        obstacles.push({ x, z, radius: radius + 0.4 });
+    }
+}
+
+buildArena();
+
+function checkCollision(targetPos) {
+    const cameraRadius = 1.0;
+    if (targetPos.x < -ROOM_HALF_SIZE + cameraRadius || targetPos.x > ROOM_HALF_SIZE - cameraRadius || targetPos.z < -ROOM_HALF_SIZE + cameraRadius || targetPos.z > ROOM_HALF_SIZE - cameraRadius) {
+        return true;
+    }
+
+    for (const obs of obstacles) {
+        if (Math.hypot(targetPos.x - obs.x, targetPos.z - obs.z) < obs.radius + cameraRadius) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function triggerPulse(intensity = 1.0) {
+    pulseActive = true;
+    pulseRadius = 0;
+    pulseMaxRadius = 150 + intensity * 320;
+    wallMaterial.uniforms.pulseRadius.value = 0.0;
+    wallMaterial.uniforms.pulseMaxRadius.value = pulseMaxRadius;
+    wallMaterial.uniforms.pulseCenter.value.copy(camera.position);
+}
+
+function spawnBug() {
+    const bug = new THREE.Group();
+    const glowMat = new THREE.MeshBasicMaterial({ color: 0xff5500, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+    const glow = new THREE.Mesh(new THREE.SphereGeometry(0.8, 16, 16), glowMat);
+    const coreMat = new THREE.MeshBasicMaterial({ color: 0xffddaa, transparent: true, opacity: 0 });
+    const core = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), coreMat);
+
+    bug.add(glow);
+    bug.add(core);
+    bug.glowMat = glowMat;
+    bug.coreMat = coreMat;
+
+    let x = 0;
+    let z = 0;
+    do {
+        x = Math.random() * (ROOM_HALF_SIZE * 2 - 10) - (ROOM_HALF_SIZE - 5);
+        z = Math.random() * (ROOM_HALF_SIZE * 2 - 10) - (ROOM_HALF_SIZE - 5);
+    } while (Math.hypot(x - camera.position.x, z - camera.position.z) < 10 || checkCollision({ x, z }));
+
+    bug.position.set(x, 0, z);
+    bug.blinkOffset = Math.random() * 1000;
+    bug.blinkSpeed = 0.002 + Math.random() * 0.003;
+    bug.baseY = (Math.random() * 4) - 1;
+    bug.hoverSpeed = 0.0005 + Math.random() * 0.001;
+    bug.hoverPhase = Math.random() * Math.PI * 2;
+
+    const angle = Math.random() * Math.PI * 2;
+    bug.velocityX = Math.cos(angle) * (0.01 + Math.random() * 0.02);
+    bug.velocityZ = Math.sin(angle) * (0.01 + Math.random() * 0.02);
+
+    scene.add(bug);
+    bugs.push(bug);
+}
+
+for (let i = 0; i < BUG_COUNT; i++) {
+    spawnBug();
+}
+
+async function setupAudio() {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+    videoElement.srcObject = stream;
+    const source = audioContext.createMediaStreamSource(stream);
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0.15;
+    source.connect(analyser);
+    timeDomainData = new Uint8Array(analyser.fftSize);
+}
+
+async function setupFaceTracking() {
+    faceLandmarker = await faceLandmarkerPromise;
+    document.getElementById('mic-visualizer').style.display = 'block';
+}
+
+function getHeadTurn(landmarks) {
+    const noseTip = landmarks[1];
+    const leftFace = landmarks[234];
+    const rightFace = landmarks[454];
+    const faceCenterX = (leftFace.x + rightFace.x) * 0.5;
+    const faceWidth = Math.max(Math.abs(rightFace.x - leftFace.x), 0.001);
+    const normalizedTurn = (noseTip.x - faceCenterX) / faceWidth;
+
+    if (normalizedTurn > 0.075) return "TURN_LEFT";
+    if (normalizedTurn < -0.075) return "TURN_RIGHT";
+    return "CENTER";
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+
+    if (analyser) {
+        analyser.getByteTimeDomainData(timeDomainData);
+        let maxDeviation = 0;
+        let sumSquares = 0;
+
+        for (let i = 0; i < timeDomainData.length; i++) {
+            const sample = (timeDomainData[i] - 128) / 128;
+            const magnitude = Math.abs(sample);
+            if (magnitude > maxDeviation) maxDeviation = magnitude;
+            sumSquares += sample * sample;
+        }
+
+        const rms = Math.sqrt(sumSquares / timeDomainData.length);
+        const peak = Math.max(maxDeviation, rms * 1.65);
+
+        if (peak < backgroundNoiseLevel + 0.03) {
+            backgroundNoiseLevel = backgroundNoiseLevel * 0.92 + peak * 0.08;
+        } else {
+            backgroundNoiseLevel = backgroundNoiseLevel * 0.995 + peak * 0.005;
+        }
+
+        dynamicThreshold = backgroundNoiseLevel + 0.055;
+        if (dynamicThreshold < 0.085) dynamicThreshold = 0.085;
+        if (dynamicThreshold > 0.28) dynamicThreshold = 0.28;
+
+        const levelEl = document.getElementById('mic-level');
+        const threshEl = document.getElementById('mic-threshold');
+        levelEl.style.height = (peak * 100) + '%';
+        threshEl.style.bottom = (dynamicThreshold * 100) + '%';
+
+        if (peak > dynamicThreshold) {
+            levelEl.style.background = '#ff3300';
+            const now = performance.now();
+            if (now - lastPulseTime > PULSE_COOLDOWN_MS) {
+                const intensity = Math.min((peak - dynamicThreshold) / Math.max(1.0 - dynamicThreshold, 0.001), 1.0);
+                triggerPulse(intensity);
+                lastPulseTime = now;
+
+                if (gameArmed && !gameStarted) {
+                    gameStarted = true;
+                    loadingElement.style.display = 'none';
+                    document.getElementById('ui').style.display = 'block';
+                    gestureHint.innerText = 'Hunt started. Turn your head to weave through the cave.';
+                }
+            }
+        } else {
+            levelEl.style.background = '#00ff00';
+        }
+    }
+
+    if (pulseActive) {
+        pulseRadius += PULSE_SPEED * 0.016;
+        wallMaterial.uniforms.pulseRadius.value = pulseRadius;
+        if (pulseRadius > pulseMaxRadius) pulseActive = false;
+    }
+
+    let moveForward = gameStarted;
+    let rotateLeft = false;
+    let rotateRight = false;
+
+    if (faceLandmarker && videoElement.readyState >= 3) {
+        const results = faceLandmarker.detectForVideo(videoElement, performance.now());
+        if (results.landmarks && results.landmarks.length > 0) {
+            const turn = getHeadTurn(results.landmarks[0]);
+            if (gameStarted) gestureHint.innerText = "Steering: " + turn.replace('_', ' ');
+            if (turn === "TURN_LEFT") rotateLeft = true;
+            if (turn === "TURN_RIGHT") rotateRight = true;
+        } else if (gameStarted) {
+            gestureHint.innerText = "Face not found...";
+        }
+    }
+
+    if (keys.ArrowDown || keys.KeyS) moveForward = false;
+    if (keys.ArrowLeft || keys.KeyA) rotateLeft = true;
+    if (keys.ArrowRight || keys.KeyD) rotateRight = true;
+
+    if (rotateLeft) camera.rotation.y += ROT_SPEED;
+    if (rotateRight) camera.rotation.y -= ROT_SPEED;
+
+    if (moveForward) {
+        const prevX = camera.position.x;
+        const prevZ = camera.position.z;
+        const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+
+        camera.position.x += dir.x * MOVE_SPEED;
+        if (checkCollision(camera.position)) camera.position.x = prevX;
+
+        camera.position.z += dir.z * MOVE_SPEED;
+        if (checkCollision(camera.position)) camera.position.z = prevZ;
+    }
+
+    const time = performance.now();
+    for (let i = bugs.length - 1; i >= 0; i--) {
+        const bug = bugs[i];
+        const blinkAmount = Math.abs(Math.sin((time + bug.blinkOffset) * bug.blinkSpeed));
+        bug.glowMat.opacity = blinkAmount * 0.8;
+        bug.coreMat.opacity = blinkAmount;
+        bug.position.y = bug.baseY + Math.sin(time * bug.hoverSpeed + bug.hoverPhase) * 4.0;
+        bug.position.x += bug.velocityX;
+        bug.position.z += bug.velocityZ;
+
+        if (bug.position.x > ROOM_HALF_SIZE - 3 || bug.position.x < -ROOM_HALF_SIZE + 3) bug.velocityX *= -1;
+        if (bug.position.z > ROOM_HALF_SIZE - 3 || bug.position.z < -ROOM_HALF_SIZE + 3) bug.velocityZ *= -1;
+
+        const dx = camera.position.x - bug.position.x;
+        const dz = camera.position.z - bug.position.z;
+        if (Math.hypot(dx, dz) < 3.0 && Math.abs(camera.position.y - bug.position.y) < 6.0) {
+            score++;
+            scoreElement.innerText = score;
+
+            const reaction = document.getElementById('chomp-reaction');
+            reaction.style.animation = 'none';
+            void reaction.offsetWidth;
+            reaction.style.animation = 'chompAnim 0.5s ease-out forwards';
+
+            scene.remove(bug);
+            bugs.splice(i, 1);
+            spawnBug();
+        }
+    }
+
+    renderer.render(scene, camera);
+}
+
+window.addEventListener('click', async () => {
+    if (gameArmed) return;
+
+    try {
+        setLoading('ARMING SENSORS...', 'Allow camera + mic, then scream to start.');
+        await setupAudio();
+        await setupFaceTracking();
+        gameArmed = true;
+        setLoading('SCREAM TO START', 'Turn your head left and right to steer once the hunt begins.');
+
+        if (!animationStarted) {
+            animationStarted = true;
+            animate();
+        }
+    } catch (error) {
+        console.error(error);
+        setLoading('ACCESS FAILED', 'Camera and mic permission are required. Click to try again.');
+    }
+});
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+window.addEventListener('keydown', (e) => {
+    if (keys.hasOwnProperty(e.code)) keys[e.code] = true;
+});
+
+window.addEventListener('keyup', (e) => {
+    if (keys.hasOwnProperty(e.code)) keys[e.code] = false;
+});
+</script>
+</body>
+</html>
