@@ -26,7 +26,10 @@
         }
 
         * { box-sizing: border-box; }
-        html { scroll-behavior: smooth; }
+        html {
+            scroll-behavior: smooth;
+            scroll-padding-top: 92px;
+        }
         body {
             margin: 0;
             font-family: "Poppins", sans-serif;
@@ -416,17 +419,31 @@
 
         .comparison-card td,
         .comparison-card th {
-            text-align: left;
             padding: 16px 0;
             border-bottom: 1px solid rgba(22, 17, 15, 0.08);
         }
 
         .comparison-card th {
             color: rgba(22, 17, 15, 0.56);
-            font-size: 12px;
+            font-size: 14px;
             text-transform: uppercase;
             letter-spacing: 0.15em;
-            font-weight: 600;
+            font-weight: 700;
+            text-align: left;
+        }
+
+        .comparison-card td {
+            text-align: left;
+        }
+
+        .comparison-card tbody td:first-child {
+            text-align: right;
+            font-weight: 700;
+            font-size: 1rem;
+            letter-spacing: -0.02em;
+            color: var(--text);
+            padding-right: 28px;
+            white-space: nowrap;
         }
 
         .comparison-card tr:last-child td {
@@ -845,11 +862,11 @@
         <div class="section-inner hero-grid">
             <div class="hero-copy">
                 <div class="eyebrow">Negative Illumination Entertainment • Lumoplay Labs</div>
-                <h1>Introducing Darkoplay.<span>The future of interactive floors is total darkness.</span></h1>
+                <h1>Introducing Darkoplay.<span>The future of interactive displays is total darkness.</span></h1>
                 <p>
                     At Lumoplay, we have spent years asking how projected play can become more immersive, more responsive,
                     and more emotionally resonant. Darkoplay is our most uncompromising answer yet: a zero-lux entertainment
-                    platform in which the absence of light becomes the interface, the medium, and, in many important ways, the brand.
+                    platform in which the absence of light becomes the interface, the medium, and the brand itself.
                 </p>
                 <div class="hero-actions">
                     <button class="button button-primary" id="enter-darkness">ENTER THE DARKNESS</button>
@@ -885,7 +902,7 @@
                         <span>required for full operation, assuming complete buy-in from your stakeholders and local mammals.</span>
                     </div>
                     <div class="glass-card">
-                        <strong>17%</strong>
+                        <strong>32%</strong>
                         <span>more instinctive than eyesight according to our internal, emotionally rigorous, pre-peer metrics.</span>
                     </div>
                 </div>
@@ -896,9 +913,9 @@
     <section class="section-block" id="platform">
         <div class="section-inner">
             <div class="section-header">
-                <h2>A platform for post-visual play.</h2>
+                <h2>Welcome to the age of post-visual play.</h2>
                 <p>
-                    Darkoplay rethinks interactive entertainment from the ground down by removing the visual dependency
+                    Darkoplay rethinks interactive entertainment from the eyeball out by removing the visual dependency
                     that has constrained the category for decades. Instead of asking children and adults to look, we invite
                     them to emit. Instead of bright projections, we offer responsive absence. Instead of clarity, we provide
                     conviction.
@@ -1003,7 +1020,7 @@
                 </div>
                 <div class="quote-card">
                     <blockquote>
-                        “Our bats love it. Our insurance provider remains difficult, but artistically this is our strongest quarter.”
+                        “Our insurance provider remains difficult, but artistically this is our strongest quarter.”
                     </blockquote>
                     <cite>Innovation Lead, nocturnal attraction operator</cite>
                 </div>
@@ -1123,6 +1140,7 @@
             Darkoplay is a speculative concept from Lumoplay and should not be interpreted as guidance for venue safety,
             lighting design, cave operations, bat relations, enterprise procurement, child supervision, or the future of human-computer interaction.
             Not responsible for collisions with stalagmites, coworkers, strategic narratives, or reality. Some metrics are aspirational. Most are emotional.
+            Remember: You can't project dark.
         </p>
     </footer>
 </div>
