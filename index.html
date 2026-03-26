@@ -1268,7 +1268,7 @@ function buildArena() {
     for (let i = 0; i < OBSTACLE_COUNT; i++) {
         const x = Math.random() * (ROOM_HALF_SIZE * 2 - 8) - (ROOM_HALF_SIZE - 4);
         const z = Math.random() * (ROOM_HALF_SIZE * 2 - 8) - (ROOM_HALF_SIZE - 4);
-        const nearSpawn = Math.abs(x) < 8 && z > ROOM_HALF_SIZE - 18;
+        const nearSpawn = Math.abs(x) < 10 && z > ROOM_HALF_SIZE - 24;
 
         if (nearSpawn) {
             i--;
@@ -1545,7 +1545,14 @@ function animate() {
     if (moveForward) {
         const prevX = camera.position.x;
         const prevZ = camera.position.z;
-        const dir = new THREE.Vector3(Math.sin(camera.rotation.y), 0, -Math.cos(camera.rotation.y));
+        const dir = new THREE.Vector3();
+        camera.getWorldDirection(dir);
+        dir.y = 0;
+        if (dir.lengthSq() < 0.0001) {
+            dir.set(0, 0, -1);
+        } else {
+            dir.normalize();
+        }
 
         camera.position.x += dir.x * MOVE_SPEED;
         if (checkCollision(camera.position)) camera.position.x = prevX;
