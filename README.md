@@ -4,7 +4,7 @@ Browser game prototype: navigate a cave by sound. Scream to emit echolocation pu
 
 ## Run
 
-Serve the folder locally and open `echolocation.html` in a modern browser over `http://localhost`.
+Serve the folder locally and open `index.html` in a modern browser over `http://localhost`.
 
 Example:
 
@@ -12,4 +12,4 @@ Example:
 python3 -m http.server 8000
 ```
 
-Then visit `http://localhost:8000/echolocation.html`.
+Then visit `http://localhost:8000/`.

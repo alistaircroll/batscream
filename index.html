@@ -249,17 +249,75 @@ function triggerPulse(intensity = 1.0) {
     wallMaterial.uniforms.pulseCenter.value.copy(camera.position);
 }
 
+const fireflyBodyMaterial = new THREE.MeshBasicMaterial({ color: 0x2a1608 });
+const fireflyHeadMaterial = new THREE.MeshBasicMaterial({ color: 0x140c06 });
+const fireflyWingMaterial = new THREE.MeshBasicMaterial({
+    color: 0xddeeff,
+    transparent: true,
+    opacity: 0.28,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    depthWrite: false
+});
+
+function randomBugTarget() {
+    let x = 0;
+    let z = 0;
+    do {
+        x = Math.random() * (ROOM_HALF_SIZE * 2 - 12) - (ROOM_HALF_SIZE - 6);
+        z = Math.random() * (ROOM_HALF_SIZE * 2 - 12) - (ROOM_HALF_SIZE - 6);
+    } while (checkCollision({ x, z }));
+    return new THREE.Vector3(x, 0, z);
+}
+
 function spawnBug() {
     const bug = new THREE.Group();
-    const glowMat = new THREE.MeshBasicMaterial({ color: 0xff5500, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
-    const glow = new THREE.Mesh(new THREE.SphereGeometry(0.8, 16, 16), glowMat);
-    const coreMat = new THREE.MeshBasicMaterial({ color: 0xffddaa, transparent: true, opacity: 0 });
-    const core = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), coreMat);
+    const body = new THREE.Group();
+    const abdomen = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 12), fireflyBodyMaterial.clone());
+    abdomen.scale.set(1.2, 1.0, 1.45);
+    abdomen.position.z = -0.05;
 
-    bug.add(glow);
-    bug.add(core);
+    const thorax = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 12), fireflyBodyMaterial.clone());
+    thorax.scale.set(1.0, 0.95, 1.1);
+    thorax.position.z = 0.18;
+
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 10), fireflyHeadMaterial.clone());
+    head.position.z = 0.36;
+
+    const glowMat = new THREE.MeshBasicMaterial({ color: 0xff9a33, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+    const glow = new THREE.Mesh(new THREE.SphereGeometry(0.52, 16, 16), glowMat);
+    glow.scale.set(1.1, 0.8, 1.3);
+    glow.position.z = -0.07;
+
+    const coreMat = new THREE.MeshBasicMaterial({ color: 0xfff0aa, transparent: true, opacity: 0 });
+    const core = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 10), coreMat);
+    core.position.z = -0.08;
+
+    const wingGeometry = new THREE.PlaneGeometry(0.4, 0.18);
+    const wingLeft = new THREE.Mesh(wingGeometry, fireflyWingMaterial.clone());
+    wingLeft.position.set(-0.11, 0.05, 0.1);
+    wingLeft.rotation.y = Math.PI * 0.2;
+    wingLeft.rotation.z = Math.PI * 0.15;
+
+    const wingRight = new THREE.Mesh(wingGeometry, fireflyWingMaterial.clone());
+    wingRight.position.set(0.11, 0.05, 0.1);
+    wingRight.rotation.y = -Math.PI * 0.2;
+    wingRight.rotation.z = -Math.PI * 0.15;
+
+    body.add(glow);
+    body.add(core);
+    body.add(abdomen);
+    body.add(thorax);
+    body.add(head);
+    body.add(wingLeft);
+    body.add(wingRight);
+    bug.add(body);
+
     bug.glowMat = glowMat;
     bug.coreMat = coreMat;
+    bug.wingLeft = wingLeft;
+    bug.wingRight = wingRight;
+    bug.body = body;
 
     let x = 0;
     let z = 0;
@@ -270,14 +328,22 @@ function spawnBug() {
 
     bug.position.set(x, 0, z);
     bug.blinkOffset = Math.random() * 1000;
-    bug.blinkSpeed = 0.002 + Math.random() * 0.003;
-    bug.baseY = (Math.random() * 4) - 1;
-    bug.hoverSpeed = 0.0005 + Math.random() * 0.001;
+    bug.blinkSpeed = 0.0016 + Math.random() * 0.002;
+    bug.baseY = 0.6 + Math.random() * 2.8;
+    bug.hoverSpeed = 0.001 + Math.random() * 0.0015;
     bug.hoverPhase = Math.random() * Math.PI * 2;
-
-    const angle = Math.random() * Math.PI * 2;
-    bug.velocityX = Math.cos(angle) * (0.01 + Math.random() * 0.02);
-    bug.velocityZ = Math.sin(angle) * (0.01 + Math.random() * 0.02);
+    bug.wingPhase = Math.random() * Math.PI * 2;
+    bug.wingSpeed = 0.02 + Math.random() * 0.03;
+    bug.heading = Math.random() * Math.PI * 2;
+    bug.turnSpeed = 0.015 + Math.random() * 0.02;
+    bug.cruiseSpeed = 0.012 + Math.random() * 0.012;
+    bug.dashSpeed = bug.cruiseSpeed * (2.1 + Math.random() * 1.3);
+    bug.currentSpeed = bug.cruiseSpeed;
+    bug.dashUntil = performance.now() + 400 + Math.random() * 1000;
+    bug.idleUntil = 0;
+    bug.target = randomBugTarget();
+    bug.bobAmount = 0.35 + Math.random() * 0.75;
+    bug.jitterAmount = 0.03 + Math.random() * 0.04;
 
     scene.add(bug);
     bugs.push(bug);
@@ -414,15 +480,59 @@ function animate() {
     const time = performance.now();
     for (let i = bugs.length - 1; i >= 0; i--) {
         const bug = bugs[i];
-        const blinkAmount = Math.abs(Math.sin((time + bug.blinkOffset) * bug.blinkSpeed));
-        bug.glowMat.opacity = blinkAmount * 0.8;
-        bug.coreMat.opacity = blinkAmount;
-        bug.position.y = bug.baseY + Math.sin(time * bug.hoverSpeed + bug.hoverPhase) * 4.0;
-        bug.position.x += bug.velocityX;
-        bug.position.z += bug.velocityZ;
+        const blinkBase = 0.5 + 0.5 * Math.sin((time + bug.blinkOffset) * bug.blinkSpeed);
+        const blinkEnvelope = 0.55 + 0.45 * Math.sin((time + bug.blinkOffset) * bug.blinkSpeed * 0.27 + 1.7);
+        const blinkAmount = Math.pow(Math.max(0, blinkBase * blinkEnvelope), 1.8);
+        bug.glowMat.opacity = 0.08 + blinkAmount * 0.85;
+        bug.coreMat.opacity = 0.18 + blinkAmount * 0.82;
 
-        if (bug.position.x > ROOM_HALF_SIZE - 3 || bug.position.x < -ROOM_HALF_SIZE + 3) bug.velocityX *= -1;
-        if (bug.position.z > ROOM_HALF_SIZE - 3 || bug.position.z < -ROOM_HALF_SIZE + 3) bug.velocityZ *= -1;
+        const wingFlap = Math.sin(time * bug.wingSpeed + bug.wingPhase);
+        const flapAngle = wingFlap * 0.95;
+        bug.wingLeft.rotation.y = 0.3 + flapAngle;
+        bug.wingRight.rotation.y = -0.3 - flapAngle;
+        bug.wingLeft.rotation.z = 0.25 + Math.abs(wingFlap) * 0.18;
+        bug.wingRight.rotation.z = -0.25 - Math.abs(wingFlap) * 0.18;
+
+        if (time > bug.idleUntil && time > bug.dashUntil) {
+            if (Math.random() < 0.35) {
+                bug.idleUntil = time + 180 + Math.random() * 260;
+                bug.currentSpeed = bug.cruiseSpeed * 0.15;
+            } else {
+                bug.dashUntil = time + 220 + Math.random() * 320;
+                bug.currentSpeed = bug.dashSpeed;
+                bug.target = randomBugTarget();
+            }
+        } else if (time > bug.idleUntil && time > bug.dashUntil - 140) {
+            bug.currentSpeed = bug.cruiseSpeed;
+        }
+
+        const toTargetX = bug.target.x - bug.position.x;
+        const toTargetZ = bug.target.z - bug.position.z;
+        const desiredHeading = Math.atan2(toTargetX, toTargetZ);
+        let headingDelta = desiredHeading - bug.heading;
+        while (headingDelta > Math.PI) headingDelta -= Math.PI * 2;
+        while (headingDelta < -Math.PI) headingDelta += Math.PI * 2;
+        bug.heading += THREE.MathUtils.clamp(headingDelta, -bug.turnSpeed, bug.turnSpeed);
+
+        const wallProximityX = Math.max(0, Math.abs(bug.position.x) - (ROOM_HALF_SIZE - 7));
+        const wallProximityZ = Math.max(0, Math.abs(bug.position.z) - (ROOM_HALF_SIZE - 7));
+        if (wallProximityX > 0 || wallProximityZ > 0) {
+            bug.heading += (Math.random() - 0.5) * 0.35;
+            bug.target = randomBugTarget();
+            bug.currentSpeed = bug.dashSpeed;
+            bug.dashUntil = time + 220;
+        }
+
+        bug.position.x += Math.sin(bug.heading) * bug.currentSpeed;
+        bug.position.z += Math.cos(bug.heading) * bug.currentSpeed;
+        bug.position.y = bug.baseY + Math.sin(time * bug.hoverSpeed + bug.hoverPhase) * bug.bobAmount + Math.sin(time * 0.013 + bug.hoverPhase * 1.7) * bug.jitterAmount;
+        bug.body.rotation.y = bug.heading;
+        bug.body.rotation.z = Math.sin(time * 0.01 + bug.hoverPhase) * 0.12;
+        bug.body.rotation.x = Math.cos(time * 0.012 + bug.hoverPhase) * 0.08;
+
+        if (Math.hypot(toTargetX, toTargetZ) < 2.0) {
+            bug.target = randomBugTarget();
+        }
 
         const dx = camera.position.x - bug.position.x;
         const dz = camera.position.z - bug.position.z;
