@@ -1081,7 +1081,8 @@
 
                 <div id="instructions">
                     SCREAM to reveal the cave.<br>
-                    TURN YOUR HEAD (OR ARROW KEYS) TO STEER | S = Brake
+                    TURN YOUR HEAD OR LEFT/RIGHT ARROWS TO STEER.<br>
+                    UP/DOWN ARROWS LOOK. FORWARD MOTION IS AUTOMATIC.
                 </div>
 
                 <div id="chomp-reaction">CHOMP!</div>
@@ -1118,11 +1119,13 @@
 import * as THREE from 'three';
 import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0";
 
-const PULSE_SPEED = 80.0;
+const PULSE_SPEED = 92.0;
 const MOVE_SPEED = 0.2;
 const ROT_SPEED = 0.045;
+const PITCH_SPEED = 0.022;
+const MAX_PITCH = Math.PI / 4;
 const ROOM_HALF_SIZE = 34;
-const OBSTACLE_COUNT = 125;
+const OBSTACLE_COUNT = 92;
 const BUG_COUNT = 7;
 const PULSE_COOLDOWN_MS = 90;
 
@@ -1143,10 +1146,12 @@ let gameStarted = false;
 let animationStarted = false;
 let pulseActive = false;
 let pulseRadius = 0;
+let pulseTargetRadius = 0;
 let pulseMaxRadius = 300;
 let backgroundNoiseLevel = 0.02;
 let dynamicThreshold = 0.08;
 let lastPulseTime = 0;
+let cameraPitch = -0.08;
 let faceLandmarker;
 let audioContext;
 let analyser;
@@ -1171,10 +1176,12 @@ function setLoading(message, subtext) {
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+camera.rotation.order = 'YXZ';
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 canvasHost.appendChild(renderer.domElement);
 camera.position.set(0, 1.6, ROOM_HALF_SIZE - 5);
+camera.rotation.x = cameraPitch;
 
 const wallMaterial = new THREE.ShaderMaterial({
     uniforms: {
@@ -1306,6 +1313,7 @@ function checkCollision(targetPos) {
 function triggerPulse(intensity = 1.0) {
     pulseActive = true;
     pulseRadius = 0;
+    pulseTargetRadius = 0;
     pulseMaxRadius = 150 + intensity * 320;
     wallMaterial.uniforms.pulseRadius.value = 0.0;
     wallMaterial.uniforms.pulseMaxRadius.value = pulseMaxRadius;
@@ -1500,9 +1508,13 @@ function animate() {
     }
 
     if (pulseActive) {
-        pulseRadius += PULSE_SPEED * 0.016;
+        pulseTargetRadius += PULSE_SPEED * 0.016;
+        pulseRadius += (pulseTargetRadius - pulseRadius) * 0.22;
         wallMaterial.uniforms.pulseRadius.value = pulseRadius;
-        if (pulseRadius > pulseMaxRadius) pulseActive = false;
+        if (pulseTargetRadius >= pulseMaxRadius) {
+            pulseTargetRadius = pulseMaxRadius;
+            if (pulseMaxRadius - pulseRadius < 1.5) pulseActive = false;
+        }
     }
 
     let moveForward = gameStarted;
@@ -1513,25 +1525,27 @@ function animate() {
         const results = faceLandmarker.detectForVideo(videoElement, performance.now());
         if (results.landmarks && results.landmarks.length > 0) {
             const turn = getHeadTurn(results.landmarks[0]);
-            if (gameStarted) gestureHint.innerText = "Steering: " + turn.replace('_', ' ');
+            if (gameStarted) gestureHint.innerText = "Steering: " + turn.replace('_', ' ') + " | Up/down arrows tilt view";
             if (turn === "TURN_LEFT") rotateLeft = true;
             if (turn === "TURN_RIGHT") rotateRight = true;
         } else if (gameStarted) {
-            gestureHint.innerText = "Face not found...";
+            gestureHint.innerText = "Face not found... left/right arrows steer, up/down arrows tilt";
         }
     }
 
-    if (keys.ArrowDown || keys.KeyS) moveForward = false;
     if (keys.ArrowLeft || keys.KeyA) rotateLeft = true;
     if (keys.ArrowRight || keys.KeyD) rotateRight = true;
 
     if (rotateLeft) camera.rotation.y += ROT_SPEED;
     if (rotateRight) camera.rotation.y -= ROT_SPEED;
+    if (keys.ArrowUp) cameraPitch = Math.max(cameraPitch - PITCH_SPEED, -MAX_PITCH);
+    if (keys.ArrowDown) cameraPitch = Math.min(cameraPitch + PITCH_SPEED, MAX_PITCH);
+    camera.rotation.x = cameraPitch;
 
     if (moveForward) {
         const prevX = camera.position.x;
         const prevZ = camera.position.z;
-        const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+        const dir = new THREE.Vector3(Math.sin(camera.rotation.y), 0, -Math.cos(camera.rotation.y));
 
         camera.position.x += dir.x * MOVE_SPEED;
         if (checkCollision(camera.position)) camera.position.x = prevX;
