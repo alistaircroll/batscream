@@ -1159,9 +1159,9 @@
 <script type="module">
 import * as THREE from 'three';
 
-const PULSE_SPEED = 60.0;
+const PULSE_SPEED = 40.0;
 const MOVE_SPEED = 0.2;
-const ROT_SPEED = 0.045;
+const ROT_SPEED = 0.03;
 const PITCH_SPEED = 0.022;
 const MAX_PITCH = Math.PI / 4;
 const ROOM_HALF_SIZE = 46;
@@ -1597,7 +1597,7 @@ function animate() {
     if (faceMesh && videoElement.readyState >= 3) {
         if (latestFaceLandmarks) {
             const headTurn = getHeadTurn(latestFaceLandmarks);
-            headTurnSmoothed = headTurnSmoothed * 0.75 + headTurn * 0.25;
+            headTurnSmoothed = headTurnSmoothed * 0.85 + headTurn * 0.15;
             if (gameStarted) gestureHint.innerText = "Head steer: " + headTurnSmoothed.toFixed(2) + " | Up/down arrows tilt view";
             if (headTurnSmoothed > 0.12) rotateLeft = true;
             if (headTurnSmoothed < -0.12) rotateRight = true;
