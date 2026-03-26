@@ -1599,8 +1599,8 @@ function animate() {
             const headTurn = getHeadTurn(latestFaceLandmarks);
             headTurnSmoothed = headTurnSmoothed * 0.85 + headTurn * 0.15;
             if (gameStarted) gestureHint.innerText = "Head steer: " + headTurnSmoothed.toFixed(2) + " | Up/down arrows tilt view";
-            if (headTurnSmoothed > 0.12) rotateLeft = true;
-            if (headTurnSmoothed < -0.12) rotateRight = true;
+            if (headTurnSmoothed > 0.22) rotateLeft = true;
+            if (headTurnSmoothed < -0.22) rotateRight = true;
         } else if (gameStarted) {
             headTurnSmoothed *= 0.84;
             gestureHint.innerText = "Face not found... left/right arrows steer, up/down arrows tilt";
